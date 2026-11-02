@@ -1,0 +1,18 @@
+# Model akhir
+data_dir: data
+model_name: convnext_tiny
+pretrained: true
+num_classes: 16
+img_size: 384
+batch_size: 32
+epochs: 10
+lr: 0.0002
+weight_decay: 0.05
+warmup_epochs: 1
+label_smoothing: 0.1
+drop_rate: 0.2
+patience: 3
+val_size: 0.1
+seed: 42
+num_workers: 4
+amp: true
