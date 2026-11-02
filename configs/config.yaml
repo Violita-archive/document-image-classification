@@ -1,16 +1,17 @@
-# Model akhir
+# Eksperimen 3 (model akhir): ConvNeXt-Tiny, input 512x384 mengikuti rasio halaman
 data_dir: data
 model_name: convnext_tiny
 pretrained: true
 num_classes: 16
-img_size: 384
-batch_size: 32
-epochs: 10
-lr: 0.0002
+img_size: [512, 384]
+batch_size: 24
+epochs: 12
+lr: 0.00015
 weight_decay: 0.05
 warmup_epochs: 1
 label_smoothing: 0.1
 drop_rate: 0.2
+drop_path_rate: 0.2
 patience: 3
 val_size: 0.1
 seed: 42

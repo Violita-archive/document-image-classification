@@ -1,4 +1,4 @@
-# Model baseline
+# Eksperimen 1: baseline
 data_dir: data
 model_name: resnet18
 pretrained: true

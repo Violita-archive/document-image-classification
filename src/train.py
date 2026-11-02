@@ -131,7 +131,8 @@ def fit(cfg: dict, train_df: pd.DataFrame, val_df: pd.DataFrame, exp_name: str, 
     train_loader = make_loader(train_df, get_train_transforms(cfg["img_size"]), cfg["batch_size"], True, cfg["num_workers"])
     val_loader = make_loader(val_df, get_eval_transforms(cfg["img_size"]), cfg["batch_size"] * 2, False, cfg["num_workers"])
 
-    model = build_model(cfg["model_name"], cfg["num_classes"], cfg.get("pretrained", True), cfg.get("drop_rate", 0.0)).to(device)
+    model = build_model(cfg["model_name"], cfg["num_classes"], cfg.get("pretrained", True), cfg.get("drop_rate", 0.0),
+                        cfg.get("drop_path_rate", 0.0)).to(device)
     print(f"{exp_name}: {cfg['model_name']} | {count_parameters(model) / 1e6:.1f} juta parameter | "
           f"img {cfg['img_size']} | device {device} | AMP {use_amp}")
 

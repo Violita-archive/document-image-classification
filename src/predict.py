@@ -1,12 +1,13 @@
 """Prediksi data test dan pembuatan file submission Kaggle.
 
 Dapat dijalankan dari terminal:
-    python -m src.predict --checkpoint checkpoint/convnext_tiny_best.pth
+    python -m src.predict --checkpoint checkpoint/convnext_tiny_512_best.pth
 """
 
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.dataset import load_metadata, make_loader
@@ -14,6 +15,39 @@ from src.evaluate import predict_proba
 from src.model import load_checkpoint
 from src.transforms import get_eval_transforms
 from src.utils import ensure_dirs, get_device, resolve_data_dir
+
+
+def predict_test(model, cfg: dict, test_df: pd.DataFrame) -> np.ndarray:
+    """Menghitung probabilitas kelas untuk seluruh data test.
+
+    Args:
+        model: Model terlatih.
+        cfg: Konfigurasi yang dipakai saat training (untuk ukuran gambar dan batch).
+        test_df: DataFrame test dengan kolom `path`.
+
+    Returns:
+        Array probabilitas berukuran (N, jumlah kelas).
+    """
+    device = next(model.parameters()).device
+    loader = make_loader(test_df, get_eval_transforms(cfg["img_size"]), cfg["batch_size"] * 2, False, cfg["num_workers"])
+    return predict_proba(model, loader, device)
+
+
+def save_submission(probs: np.ndarray, test_df: pd.DataFrame, save_path: str | Path) -> pd.DataFrame:
+    """Menyimpan prediksi dalam format submission Kaggle (kolom `id`, `label`).
+
+    Args:
+        probs: Probabilitas kelas berukuran (N, jumlah kelas).
+        test_df: DataFrame test dengan kolom `id`.
+        save_path: Lokasi file CSV.
+
+    Returns:
+        DataFrame submission.
+    """
+    sub = pd.DataFrame({"id": test_df["id"].values, "label": probs.argmax(1)})
+    ensure_dirs(Path(save_path).parent)
+    sub.to_csv(save_path, index=False)
+    return sub
 
 
 def make_submission(model, cfg: dict, test_df: pd.DataFrame, save_path: str | Path) -> pd.DataFrame:
@@ -28,13 +62,7 @@ def make_submission(model, cfg: dict, test_df: pd.DataFrame, save_path: str | Pa
     Returns:
         DataFrame submission dengan kolom `id` dan `label`.
     """
-    device = next(model.parameters()).device
-    loader = make_loader(test_df, get_eval_transforms(cfg["img_size"]), cfg["batch_size"] * 2, False, cfg["num_workers"])
-    probs = predict_proba(model, loader, device)
-    sub = pd.DataFrame({"id": test_df["id"].values, "label": probs.argmax(1)})
-    ensure_dirs(Path(save_path).parent)
-    sub.to_csv(save_path, index=False)
-    return sub
+    return save_submission(predict_test(model, cfg, test_df), test_df, save_path)
 
 
 def validate_submission(sub: pd.DataFrame, test_df: pd.DataFrame) -> None:

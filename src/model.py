@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 
 
-def build_model(model_name: str, num_classes: int = 16, pretrained: bool = True, drop_rate: float = 0.0) -> nn.Module:
+def build_model(model_name: str, num_classes: int = 16, pretrained: bool = True, drop_rate: float = 0.0,
+                drop_path_rate: float = 0.0) -> nn.Module:
     """Membuat model CNN dari library timm dengan kepala klasifikasi baru.
 
     Args:
@@ -15,11 +16,13 @@ def build_model(model_name: str, num_classes: int = 16, pretrained: bool = True,
         num_classes: Jumlah kelas keluaran.
         pretrained: Menggunakan bobot pre-trained ImageNet jika True.
         drop_rate: Dropout sebelum lapisan klasifikasi.
+        drop_path_rate: Peluang stochastic depth (melewati blok secara acak) untuk regularisasi.
 
     Returns:
         Model PyTorch.
     """
-    return timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes, drop_rate=drop_rate)
+    kwargs = {"drop_path_rate": drop_path_rate} if drop_path_rate > 0 else {}
+    return timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes, drop_rate=drop_rate, **kwargs)
 
 
 def count_parameters(model: nn.Module) -> int:

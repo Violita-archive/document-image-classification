@@ -6,7 +6,21 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-def get_train_transforms(img_size: int) -> T.Compose:
+def to_hw(img_size) -> tuple[int, int]:
+    """Mengubah ukuran input menjadi pasangan (tinggi, lebar).
+
+    Args:
+        img_size: Bilangan bulat untuk ukuran persegi, atau list/tuple [tinggi, lebar].
+
+    Returns:
+        Tuple (tinggi, lebar).
+    """
+    if isinstance(img_size, (list, tuple)):
+        return int(img_size[0]), int(img_size[1])
+    return int(img_size), int(img_size)
+
+
+def get_train_transforms(img_size) -> T.Compose:
     """Transformasi untuk data latih dengan augmentasi ringan.
 
     Augmentasi meniru variasi hasil scan: rotasi kecil, pergeseran, skala, serta
@@ -14,13 +28,13 @@ def get_train_transforms(img_size: int) -> T.Compose:
     terbalik tidak realistis.
 
     Args:
-        img_size: Ukuran sisi gambar setelah resize.
+        img_size: Ukuran gambar setelah resize, berupa bilangan bulat (persegi) atau [tinggi, lebar].
 
     Returns:
         Objek `transforms.Compose`.
     """
     return T.Compose([
-        T.Resize((img_size, img_size), antialias=True),
+        T.Resize(to_hw(img_size), antialias=True),
         T.RandomAffine(degrees=3, translate=(0.03, 0.03), scale=(0.95, 1.05), fill=255),
         T.ColorJitter(brightness=0.2, contrast=0.2),
         T.ToTensor(),
@@ -28,17 +42,17 @@ def get_train_transforms(img_size: int) -> T.Compose:
     ])
 
 
-def get_eval_transforms(img_size: int) -> T.Compose:
+def get_eval_transforms(img_size) -> T.Compose:
     """Transformasi untuk data validation dan test (tanpa augmentasi).
 
     Args:
-        img_size: Ukuran sisi gambar setelah resize.
+        img_size: Ukuran gambar setelah resize, berupa bilangan bulat (persegi) atau [tinggi, lebar].
 
     Returns:
         Objek `transforms.Compose`.
     """
     return T.Compose([
-        T.Resize((img_size, img_size), antialias=True),
+        T.Resize(to_hw(img_size), antialias=True),
         T.ToTensor(),
         T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
