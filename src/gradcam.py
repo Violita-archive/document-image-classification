@@ -9,11 +9,12 @@ def get_target_layer(model) -> torch.nn.Module:
     """Mengambil lapisan konvolusi terakhir yang umum dipakai untuk Grad-CAM.
 
     Args:
-        model: Model timm (ResNet, ConvNeXt, EfficientNet, dan sejenisnya).
+        model: `DocumentClassifier` atau model timm (ResNet, ConvNeXt, EfficientNet, dan sejenisnya).
 
     Returns:
         Modul lapisan target.
     """
+    model = getattr(model, "backbone", model)
     for name in ("stages", "layer4", "blocks", "features"):
         if hasattr(model, name):
             layer = getattr(model, name)

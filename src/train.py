@@ -1,4 +1,4 @@
-"""Loop training, validasi, dan penyimpanan model terbaik.
+"""Loop training dan validasi (`loop_fn`) serta fungsi `fit` untuk menjalankan satu eksperimen.
 
 Dapat dijalankan dari terminal:
     python -m src.train --config configs/config.yaml
@@ -6,7 +6,6 @@ Dapat dijalankan dari terminal:
 
 import argparse
 import math
-import time
 from pathlib import Path
 
 import numpy as np
@@ -16,10 +15,11 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm.auto import tqdm
 
+from src.callback import Callback
 from src.dataset import clean_train_data, load_metadata, make_loader, split_train_val
-from src.model import build_model, count_parameters
+from src.model import count_parameters, model_from_config
 from src.transforms import get_eval_transforms, get_train_transforms
-from src.utils import ensure_dirs, get_device, load_config, resolve_data_dir, set_seed
+from src.utils import get_device, load_config, resolve_data_dir, set_seed
 
 
 def build_scheduler(optimizer, total_steps: int, warmup_steps: int) -> LambdaLR:
@@ -50,73 +50,55 @@ def build_scheduler(optimizer, total_steps: int, warmup_steps: int) -> LambdaLR:
     return LambdaLR(optimizer, lr_lambda)
 
 
-def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler, device, use_amp: bool) -> tuple[float, float]:
-    """Melatih model selama satu epoch.
+def loop_fn(mode: str, dataloader, model, criterion, optimizer, device, scheduler=None, scaler=None,
+            use_amp: bool = False) -> tuple[float, float, np.ndarray | None]:
+    """Menjalankan satu epoch training atau evaluasi (mengikuti pola `loop_fn` pada praktikum).
+
+    Pada mode `train`, bobot model diperbarui setiap batch dan scheduler dijalankan per batch.
+    Pada mode `test`, fungsi ini dipanggil di dalam `torch.no_grad()` dan probabilitas
+    prediksi dikembalikan.
 
     Args:
+        mode: `train` atau `test`.
+        dataloader: DataLoader yang digunakan.
         model: Model PyTorch.
-        loader: DataLoader data latih.
         criterion: Fungsi loss.
         optimizer: Optimizer.
-        scheduler: Scheduler learning rate (diperbarui setiap batch).
-        scaler: GradScaler untuk mixed precision.
         device: Perangkat komputasi.
+        scheduler: Scheduler learning rate (hanya mode train).
+        scaler: GradScaler untuk mixed precision (hanya mode train).
         use_amp: Menggunakan mixed precision jika True.
 
     Returns:
-        Tuple (rata-rata loss, akurasi) pada data latih.
+        Tuple (rata-rata loss, akurasi, probabilitas prediksi). Probabilitas bernilai None pada mode train.
     """
-    model.train()
-    total_loss, correct, n = 0.0, 0, 0
-    for x, y in tqdm(loader, desc="train", leave=False):
-        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-        optimizer.zero_grad(set_to_none=True)
+    model.train() if mode == "train" else model.eval()
+    cost, correct, n, probs = 0.0, 0, 0, []
+    for feature, target in tqdm(dataloader, desc=mode, leave=False):
+        feature, target = feature.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        if mode == "train":
+            optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, enabled=use_amp):
-            logits = model(x)
-            loss = criterion(logits, y)
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        scheduler.step()
-        total_loss += loss.item() * y.size(0)
-        correct += (logits.argmax(1) == y).sum().item()
-        n += y.size(0)
-    return total_loss / n, correct / n
-
-
-@torch.no_grad()
-def validate(model, loader, criterion, device, use_amp: bool) -> tuple[float, float, np.ndarray]:
-    """Mengevaluasi model pada data validation.
-
-    Args:
-        model: Model PyTorch.
-        loader: DataLoader data validation.
-        criterion: Fungsi loss.
-        device: Perangkat komputasi.
-        use_amp: Menggunakan mixed precision jika True.
-
-    Returns:
-        Tuple (rata-rata loss, akurasi, probabilitas prediksi berukuran (N, kelas)).
-    """
-    model.eval()
-    total_loss, correct, n, probs = 0.0, 0, 0, []
-    for x, y in tqdm(loader, desc="val", leave=False):
-        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-        with torch.autocast(device_type=device.type, enabled=use_amp):
-            logits = model(x)
-            loss = criterion(logits, y)
-        total_loss += loss.item() * y.size(0)
-        correct += (logits.argmax(1) == y).sum().item()
-        n += y.size(0)
-        probs.append(logits.float().softmax(1).cpu().numpy())
-    return total_loss / n, correct / n, np.concatenate(probs)
+            output = model(feature)
+            loss = criterion(output, target)
+        if mode == "train":
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+        else:
+            probs.append(output.float().softmax(1).cpu().numpy())
+        cost += loss.item() * target.size(0)
+        correct += (output.argmax(1) == target).sum().item()
+        n += target.size(0)
+    return cost / n, correct / n, (np.concatenate(probs) if probs else None)
 
 
 def fit(cfg: dict, train_df: pd.DataFrame, val_df: pd.DataFrame, exp_name: str, root: str | Path = ".") -> dict:
-    """Menjalankan training lengkap untuk satu eksperimen.
+    """Menjalankan seluruh tahapan training untuk satu eksperimen.
 
-    Model dengan akurasi validation tertinggi disimpan ke `checkpoint/<exp_name>_best.pth`
-    dan riwayat per epoch disimpan ke `results/metrics/<exp_name>_history.csv`.
+    Tahapan sama dengan yang ditulis langsung pada `02_training.ipynb`: DataLoader,
+    MCOC (Model, Criterion, Optimizer, Callback), lalu loop training dengan early stopping.
 
     Args:
         cfg: Konfigurasi eksperimen.
@@ -126,62 +108,32 @@ def fit(cfg: dict, train_df: pd.DataFrame, val_df: pd.DataFrame, exp_name: str, 
         root: Folder utama repository.
 
     Returns:
-        Dictionary berisi riwayat training, akurasi terbaik, epoch terbaik,
-        probabilitas validation terbaik, durasi, dan path checkpoint.
+        Ringkasan hasil dari `Callback.summary()`.
     """
-    root = Path(root)
-    ckpt_dir, metric_dir = root / "checkpoint", root / "results" / "metrics"
-    ensure_dirs(ckpt_dir, metric_dir)
     set_seed(cfg["seed"])
     device = get_device()
     use_amp = bool(cfg.get("amp", True)) and device.type == "cuda"
 
-    train_loader = make_loader(train_df, get_train_transforms(cfg["img_size"]), cfg["batch_size"], True, cfg["num_workers"])
-    val_loader = make_loader(val_df, get_eval_transforms(cfg["img_size"]), cfg["batch_size"] * 2, False, cfg["num_workers"])
+    trainloader = make_loader(train_df, get_train_transforms(cfg["img_size"]), cfg["batch_size"], True, cfg["num_workers"])
+    testloader = make_loader(val_df, get_eval_transforms(cfg["img_size"]), cfg["batch_size"] * 2, False, cfg["num_workers"])
 
-    model = build_model(cfg["model_name"], cfg["num_classes"], cfg.get("pretrained", True), cfg.get("drop_rate", 0.0),
-                        cfg.get("drop_path_rate", 0.0)).to(device)
+    model = model_from_config(cfg).to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=cfg.get("label_smoothing", 0.0))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
+    scheduler = build_scheduler(optimizer, cfg["epochs"] * len(trainloader), int(cfg.get("warmup_epochs", 1) * len(trainloader)))
+    scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+    callback = Callback(model, cfg, exp_name, patience=cfg.get("patience", 99), root=root)
     print(f"{exp_name}: {cfg['model_name']} | {count_parameters(model) / 1e6:.1f} juta parameter | "
           f"img {cfg['img_size']} | device {device} | AMP {use_amp}")
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=cfg.get("label_smoothing", 0.0))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
-    total_steps = cfg["epochs"] * len(train_loader)
-    scheduler = build_scheduler(optimizer, total_steps, int(cfg.get("warmup_epochs", 1) * len(train_loader)))
-    scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
-
-    ckpt_path = ckpt_dir / f"{exp_name}_best.pth"
-    history, best_acc, best_epoch, best_probs, wait = [], -1.0, 0, None, 0
-    start = time.time()
-    for epoch in range(1, cfg["epochs"] + 1):
-        t0 = time.time()
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, criterion, optimizer, scheduler, scaler, device, use_amp)
-        va_loss, va_acc, va_probs = validate(model, val_loader, criterion, device, use_amp)
-        history.append({"epoch": epoch, "train_loss": tr_loss, "train_acc": tr_acc, "val_loss": va_loss,
-                        "val_acc": va_acc, "lr": optimizer.param_groups[0]["lr"], "detik": time.time() - t0})
-        flag = ""
-        if va_acc > best_acc:
-            best_acc, best_epoch, best_probs, wait = va_acc, epoch, va_probs, 0
-            torch.save({"model_state": model.state_dict(), "config": cfg, "epoch": epoch, "val_acc": va_acc}, ckpt_path)
-            flag = " *"
-        else:
-            wait += 1
-        print(f"epoch {epoch:2d} | train loss {tr_loss:.4f} acc {tr_acc:.4f} | "
-              f"val loss {va_loss:.4f} acc {va_acc:.4f} | {time.time() - t0:.0f}s{flag}")
-        if wait >= cfg.get("patience", 99):
-            print(f"Early stopping pada epoch {epoch}.")
+    for _ in range(cfg["epochs"]):
+        train_cost, train_score, _ = loop_fn("train", trainloader, model, criterion, optimizer, device, scheduler, scaler, use_amp)
+        with torch.no_grad():
+            test_cost, test_score, test_probs = loop_fn("test", testloader, model, criterion, optimizer, device, use_amp=use_amp)
+        callback.log(train_cost, test_cost, train_score, test_score, optimizer.param_groups[0]["lr"])
+        if callback.early_stopping(model, test_score, test_probs):
             break
-
-    hist_df = pd.DataFrame(history)
-    hist_df.to_csv(metric_dir / f"{exp_name}_history.csv", index=False)
-    return {
-        "history": hist_df,
-        "best_acc": best_acc,
-        "best_epoch": best_epoch,
-        "val_probs": best_probs,
-        "minutes": (time.time() - start) / 60,
-        "ckpt_path": ckpt_path,
-    }
+    return callback.summary()
 
 
 def main() -> None:

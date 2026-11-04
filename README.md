@@ -31,10 +31,11 @@ document-image-classification/
 │   ├── 02_training.ipynb      # training, perbandingan eksperimen, submission (Kaggle GPU)
 │   └── 03_evaluation.ipynb    # evaluasi per kelas, confusion matrix, Grad-CAM (CPU)
 ├── src/
+│   ├── callback.py            # Callback: logging per epoch, simpan model terbaik, early stopping
 │   ├── dataset.py             # pembacaan metadata, pembersihan data, split, Dataset PyTorch
 │   ├── transforms.py          # resize dan augmentasi
-│   ├── model.py               # pembuatan dan pemuatan model
-│   ├── train.py               # loop training dan validasi
+│   ├── model.py               # class DocumentClassifier (backbone timm), pemuatan checkpoint
+│   ├── train.py               # loop_fn (train/test per epoch), scheduler, fit
 │   ├── evaluate.py            # prediksi dan metrik
 │   ├── predict.py             # pembuatan file submission
 │   ├── gradcam.py             # visualisasi Grad-CAM
@@ -139,6 +140,22 @@ Letakkan file tersebut di folder `checkpoint/`.
 EDA (01) → pembersihan data → split stratified 90/10 → training 3 eksperimen (02)
         → ensemble → submission Kaggle → evaluasi per kelas dan Grad-CAM (03)
 ```
+
+Notebook `02_training.ipynb` mengikuti alur pengerjaan pada praktikum:
+
+| Tahap praktikum | Implementasi di repository |
+|---|---|
+| Import Dataset & Script | dataset dari *Add Input* Kaggle, script dari `git clone` repository ini |
+| Import Library | modul pada `src/` |
+| Dataset & Dataloader | `load_metadata`, `clean_train_data`, `split_train_val`, `make_loader` (`src/dataset.py`), transformasi di `src/transforms.py` |
+| Arsitektur & Config | class `DocumentClassifier` (`src/model.py`), konfigurasi YAML di `configs/` |
+| Training Preparation (MCOC) | Model, Criterion (`CrossEntropyLoss`), Optimizer (`AdamW`), Callback (`src/callback.py`) |
+| Training | `loop_fn` mode `train` dan `test` (`src/train.py`), `callback.log`, `callback.early_stopping`, `callback.plot_final` |
+| Evaluate | perbandingan eksperimen dan ensemble (`02`), metrik per kelas, confusion matrix, dan Grad-CAM (`03`) |
+| Predict | `predict_test` dan `save_submission` (`src/predict.py`) |
+| Download Model | `hasil_training.zip` di tab Output Kaggle |
+
+Perbedaan dengan praktikum: konfigurasi disimpan sebagai file YAML (bukan `SimpleNamespace` di notebook) agar dapat dipakai ulang dari terminal, dan transfer learning dilakukan dengan fine-tuning seluruh lapisan sejak awal, tanpa tahap freeze, karena citra dokumen cukup berbeda dengan citra alami ImageNet.
 
 ---
 
