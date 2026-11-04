@@ -43,6 +43,8 @@ document-image-classification/
 │   ├── figures/               # seluruh grafik
 │   ├── metrics/               # tabel metrik, riwayat training, prediksi validation
 │   └── submissions/           # file submission Kaggle
+├── .gitignore                 # data/, checkpoint/, dan *.pth tidak di-upload
+├── LICENSE
 ├── requirements.txt
 └── README.md
 ```

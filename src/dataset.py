@@ -142,6 +142,12 @@ class DocumentDataset(Dataset):
     """
 
     def __init__(self, df: pd.DataFrame, transform=None):
+        """Menyimpan daftar path, label, dan transformasi.
+
+        Args:
+            df: DataFrame dengan kolom `path` dan (opsional) `label`.
+            transform: Transformasi torchvision yang diterapkan pada gambar.
+        """
         self.paths = [str(p) for p in df["path"]]
         self.labels = df["label"].tolist() if "label" in df.columns else [-1] * len(df)
         self.transform = transform

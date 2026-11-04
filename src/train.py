@@ -34,6 +34,14 @@ def build_scheduler(optimizer, total_steps: int, warmup_steps: int) -> LambdaLR:
         Objek LambdaLR.
     """
     def lr_lambda(step):
+        """Menghitung faktor pengali learning rate pada langkah tertentu.
+
+        Args:
+            step: Indeks langkah training.
+
+        Returns:
+            Faktor pengali learning rate (0-1).
+        """
         if step < warmup_steps:
             return (step + 1) / max(1, warmup_steps)
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)

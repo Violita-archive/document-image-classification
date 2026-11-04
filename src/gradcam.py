@@ -34,6 +34,12 @@ class GradCAM:
     """
 
     def __init__(self, model, target_layer):
+        """Memasang hook forward dan backward pada lapisan target.
+
+        Args:
+            model: Model PyTorch dalam mode eval.
+            target_layer: Lapisan yang feature map-nya digunakan.
+        """
         self.model = model
         self.activations = None
         self.gradients = None
