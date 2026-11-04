@@ -119,7 +119,15 @@ Path data diatur pada `data_dir` di file konfigurasi. Di Kaggle, folder `/kaggle
 Setelah `results/` dan `checkpoint/` tersedia, jalankan `notebooks/03_evaluation.ipynb`. Notebook ini tidak membutuhkan GPU.
 
 ### Bobot model
-Folder `checkpoint/` tidak di-upload karena ukurannya melebihi batas GitHub. Bobot model dapat diunduh di: *[tautan Google Drive]*
+Folder `checkpoint/` tidak di-upload karena ukurannya melebihi batas GitHub. Bobot ketiga model dapat diunduh di [Google Drive](https://drive.google.com/drive/folders/1hGV6wI3IpwKYAcABI3Rs8LNrBcrvp8ET?usp=sharing):
+
+| File | Eksperimen |
+|---|---|
+| `baseline_resnet18_best.pth` | 1: ResNet-18, 224x224 |
+| `convnext_tiny_384_best.pth` | 2: ConvNeXt-Tiny, 384x384 |
+| `convnext_tiny_512_best.pth` | 3: ConvNeXt-Tiny, 512x384 |
+
+Letakkan file tersebut di folder `checkpoint/`.
 
 ---
 
@@ -199,32 +207,91 @@ Seluruh model memakai bobot pre-trained ImageNet dari `timm`, optimizer AdamW, w
 
 ### 4. Evaluasi per kelas
 
-*(diisi dari `03_evaluation.ipynb`)*
+Evaluasi menggunakan model ensemble pada 3.196 data validation.
 
-![Confusion matrix](results/figures/confusion_matrix.png)
+| Kelas | Precision | Recall | F1 | F1 baseline |
+|---|---|---|---|---|
+| form | 0,750 | 0,765 | **0,757** | 0,638 |
+| scientific_report | 0,781 | 0,785 | **0,783** | 0,673 |
+| presentation | 0,795 | 0,859 | 0,826 | 0,722 |
+| questionnaire | 0,867 | 0,805 | 0,835 | 0,767 |
+| budget | 0,859 | 0,881 | 0,870 | 0,748 |
+| news_article | 0,899 | 0,862 | 0,880 | 0,831 |
+| advertisement | 0,865 | 0,909 | 0,887 | 0,842 |
+| letter | 0,921 | 0,888 | 0,904 | 0,857 |
+| invoice | 0,918 | 0,899 | 0,908 | 0,858 |
+| specification | 0,923 | 0,909 | 0,916 | 0,874 |
+| scientific_publication | 0,926 | 0,908 | 0,917 | 0,877 |
+| file_folder | 0,919 | 0,960 | 0,940 | 0,904 |
+| memo | 0,958 | 0,925 | 0,941 | 0,880 |
+| handwritten | 0,947 | 0,966 | 0,956 | 0,908 |
+| resume | 0,970 | 0,951 | 0,960 | 0,920 |
+| email | 0,990 | 1,000 | **0,995** | 0,966 |
 
 ![F1 per kelas](results/figures/f1_per_class.png)
 
+- Seluruh kelas membaik dibanding baseline. Kenaikan terbesar terjadi pada kelas yang paling sulit: budget, form, dan scientific_report (masing-masing ±0,11–0,12).
+- **Kelas termudah** adalah email (F1 0,995), resume, handwritten, dan memo. Kelas-kelas ini memiliki penanda visual yang konsisten, seperti blok header To/From/Subject, tulisan tangan, atau struktur bagian yang seragam. Hal ini sejalan dengan t-SNE pada EDA, di mana email sudah terpisah hanya dari piksel mentah.
+- **Kelas tersulit** adalah form, scientific_report, presentation, dan questionnaire. Keempatnya tidak memiliki tata letak baku dan sering berisi campuran tabel, teks, dan isian.
+
+![Confusion matrix](results/figures/confusion_matrix.png)
+
+Pasangan kelas yang paling sering tertukar:
+
+| Sebenarnya | Prediksi | Jumlah |
+|---|---|---|
+| invoice | form | 12 |
+| scientific_report | presentation | 11 |
+| news_article | presentation | 10 |
+| scientific_report | form | 8 |
+| questionnaire | scientific_report | 8 |
+| news_article | advertisement | 8 |
+| form | questionnaire | 7 |
+| scientific_publication | scientific_report | 7 |
+
+Kesalahan umumnya terjadi antar kelas yang secara visual memang mirip: invoice dan form sama-sama berisi kolom isian dan tabel, scientific_report dan scientific_publication sama-sama padat teks, dan news_article dengan foto besar menyerupai advertisement.
+
 ### 5. Analisis kesalahan
 
-*(diisi dari `03_evaluation.ipynb`)*
+| Probabilitas prediksi | Jumlah data | Akurasi |
+|---|---|---|
+| ≤ 0,5 | 229 | 0,389 |
+| 0,5 – 0,7 | 233 | 0,584 |
+| 0,7 – 0,9 | 793 | 0,894 |
+| > 0,9 | 1.941 | 0,988 |
+
+Probabilitas model cukup dapat dipercaya: 61% data diprediksi dengan probabilitas di atas 0,9, dan pada kelompok itu akurasinya 98,8%. Sebaliknya, prediksi dengan probabilitas di bawah 0,5 hanya benar 39%.
 
 ![Prediksi salah](results/figures/misclassified_examples.png)
+
+Gambar di atas adalah kesalahan dengan probabilitas tertinggi, yaitu kasus ketika model yakin tetapi keliru. Sebagian besar kasus ini sulit dibedakan bahkan secara manual:
+- Halaman berlabel *advertisement* yang hanya berisi judul pendek ("Promotional Item") atau teks yang diputar diprediksi sebagai *presentation*, karena tampilannya memang seperti slide.
+- Surat dengan tulisan tangan panjang berlabel *questionnaire* atau *specification* diprediksi sebagai *handwritten*.
+- *Form* berjudul "Notice of Approval" dengan susunan seperti surat diprediksi sebagai *letter*.
+
+Beberapa label pada RVL-CDIP bersifat ambigu karena satu halaman dapat memenuhi ciri lebih dari satu kelas. Kesalahan jenis ini sulit dihilangkan hanya dengan memperbaiki model.
 
 ### 6. Grad-CAM
 
 ![Grad-CAM](results/figures/gradcam_examples.png)
 
+- Pada banyak kelas, model memperhatikan bagian yang masuk akal: blok header pada email dan memo, kolom nominal pada invoice, tanda tangan pada letter, serta judul dan badan teks pada scientific_publication.
+- Pada beberapa gambar (advertisement, form, handwritten, news_article, scientific_report, specification), perhatian model juga jatuh pada **nomor arsip di pojok kanan bawah**. Nomor ini berasal dari proses pengarsipan dokumen, bukan dari isi dokumen. Ada kemungkinan model memanfaatkan pola nomor arsip sebagai jalan pintas. Hal ini perlu diperiksa lebih lanjut, misalnya dengan menutup area tersebut saat pengujian.
+
 ### 7. Skor Kaggle
 
-| Submission | Val acc | Public | Private |
-|---|---|---|---|
-| baseline_resnet18 | 0,8285 | 0,81472 | |
-| convnext_tiny_384 | 0,8867 | 0,87703 | |
-| convnext_tiny_512 | 0,8833 | | |
-| **ensemble** (final) | **0,8924** | | |
+Empat file submission dikirim ke Kaggle. Semua dihasilkan oleh `02_training.ipynb` dan tersimpan di `results/submissions/`.
 
-Skor public sekitar 1 poin di bawah akurasi validation, konsisten dengan hasil EDA yang menunjukkan distribusi train dan test serupa.
+| File submission | Model | Val acc | Public | Private |
+|---|---|---|---|---|
+| `submission_baseline_resnet18.csv` | ResNet-18, 224x224 | 0,8285 | 0,81472 | |
+| `submission_convnext_tiny_384.csv` | ConvNeXt-Tiny, 384x384 | 0,8867 | 0,87703 | |
+| `submission_convnext_tiny_512.csv` | ConvNeXt-Tiny, 512x384 | 0,8833 | 0,88205 | |
+| **`submission_ensemble.csv`** | rata-rata ConvNeXt 384 + 512 | **0,8924** | **0,89042** | |
+
+**Submission final yang dipilih: `submission_ensemble.csv`.** Pemilihan didasarkan pada akurasi validation tertinggi, bukan skor public. Skor public hanya dihitung dari sebagian data test, sehingga memilih berdasarkan skor public berisiko overfitting pada leaderboard.
+
+Skor public dan akurasi validation selisihnya kurang dari 1,2 poin untuk semua submission, dan model terbaik di validation (ensemble) juga terbaik di public. Ini konsisten dengan hasil EDA yang menunjukkan distribusi train dan test serupa, sehingga validation dapat dipercaya untuk memilih model. Satu-satunya perbedaan urutan terjadi pada eksperimen 2 dan 3: di validation, eksperimen 2 sedikit lebih tinggi (0,8867 vs 0,8833), sedangkan di public, eksperimen 3 lebih tinggi (0,88205 vs 0,87703). Selisih sekecil ini masih dalam batas variasi akibat pemilihan sampel.
 
 ---
 
@@ -233,7 +300,8 @@ Skor public sekitar 1 poin di bawah akurasi validation, konsisten dengan hasil E
 1. Data relatif bersih dan seimbang. Masalah utamanya adalah sejumlah kecil gambar identik berlabel berbeda, yang dibuang sebelum training.
 2. Fine-tuning CNN pre-trained bekerja jauh lebih baik dibanding fitur piksel sederhana. ConvNeXt-Tiny pada resolusi 384 memberi akurasi validation 0,8867, naik 5,8 poin dari baseline ResNet-18.
 3. Model cenderung overfitting. Regularisasi tambahan sedikit mengurangi selisih train–validation, tetapi tidak menaikkan akurasi.
-4. Ensemble dua model dengan ukuran input berbeda memberi hasil terbaik, yaitu 0,8924 pada validation.
+4. Ensemble dua model dengan ukuran input berbeda memberi hasil terbaik, yaitu 0,8924 pada validation dan 0,89042 pada public leaderboard.
+5. Kelas dengan penanda visual yang tegas (email, resume, handwritten, memo) diklasifikasikan dengan F1 di atas 0,94. Kelas dengan tata letak bebas (form, scientific_report, presentation, questionnaire) masih berada di kisaran 0,76–0,84, dan sebagian kesalahannya berasal dari dokumen yang memang ambigu.
 
 **Keterbatasan dan saran**
 - Hanya satu split validation yang digunakan. Cross-validation akan memberi estimasi yang lebih stabil, tetapi membutuhkan waktu GPU beberapa kali lipat.
@@ -244,5 +312,5 @@ Skor public sekitar 1 poin di bawah akurasi validation, konsisten dengan hasil E
 
 ## Author
 
-*Nama* — *NRP*
+Violita Karina Putri — 5052241009
 Departemen Statistika, Institut Teknologi Sepuluh Nopember
