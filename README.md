@@ -101,7 +101,7 @@ pip install -r requirements.txt
 
 ### 2. Menjalankan di Kaggle (disarankan, membutuhkan GPU)
 1. Buat notebook baru dari halaman kompetisi (dataset otomatis ter-attach).
-2. **File → Import Notebook → GitHub**, pilih `notebooks/02_training.ipynb`.
+2. **File → Import Notebook → GitHub**, isi URL `https://github.com/Violita-archive/document-image-classification/blob/main/notebooks/02_training.ipynb`.
 3. **Settings**: Accelerator **GPU T4**, Internet **On**.
 4. **Save Version → Save & Run All**. Cell pertama otomatis meng-clone repository ini.
 5. Hasil (`results/` dan `checkpoint/`) tersedia di tab **Output** sebagai `hasil_training.zip`.
@@ -175,7 +175,7 @@ Perbedaan dengan praktikum: konfigurasi disimpan sebagai file YAML (bukan `Simpl
 
 ![Contoh gambar per kelas](results/figures/eda_samples_per_class.png)
 
-Citra rata-rata tiap kelas menunjukkan pola tata letak yang berbeda, misalnya blok header pada email dan dua kolom pada scientific_publication. Meski begitu, proyeksi t-SNE dari piksel mentah memperlihatkan sebagian besar kelas saling tumpang tindih. Hanya email, file_folder, dan specification yang membentuk kelompok jelas. Hal ini menunjukkan bahwa diperlukan model yang mampu mempelajari pola tata letak dan teks, bukan sekadar intensitas piksel.
+Citra rata-rata tiap kelas menunjukkan pola tata letak yang berbeda, misalnya blok header pada email dan dua kolom pada scientific_publication. Namun pada proyeksi t-SNE dari piksel mentah, sebagian besar kelas masih tumpang tindih dan hanya email, file_folder, dan specification yang terpisah cukup jelas. Karena itu digunakan CNN yang dapat mempelajari pola tata letak dan teks secara langsung dari gambar.
 
 ![Citra rata-rata per kelas](results/figures/eda_multivariate_mean_image.png)
 
@@ -201,18 +201,17 @@ Seluruh model memakai bobot pre-trained ImageNet dari `timm`, optimizer AdamW, w
 
 | Eksperimen | Model | Input | Epoch terbaik | Train acc | Val acc | Selisih | Waktu |
 |---|---|---|---|---|---|---|---|
-| 1 | ResNet-18 | 224x224 | 5 / 5 | 0,8565 | 0,8285 | 0,028 | 12 menit |
-| 2 | ConvNeXt-Tiny | 384x384 | 9 / 10 | 0,9914 | 0,8867 | 0,105 | 67 menit |
-| 3 | ConvNeXt-Tiny + drop path 0,2 | 512x384 | 11 / 12 | 0,9791 | 0,8833 | 0,096 | 109 menit |
+| 1 | ResNet-18 | 224x224 | 5 / 5 | 0,8565 | 0,8285 | 0,028 | 13 menit |
+| 2 | ConvNeXt-Tiny | 384x384 | 9 / 10 | 0,9914 | 0,8867 | 0,105 | 69 menit |
+| 3 | ConvNeXt-Tiny + drop path 0,2 | 512x384 | 11 / 12 | 0,9791 | 0,8833 | 0,096 | 110 menit |
 | **Ensemble** | rata-rata probabilitas 2 + 3 | - | - | - | **0,8924** | - | - |
 
 ![Akurasi validation per epoch](results/figures/experiments_val_acc.png)
 
-**Interpretasi:**
-- **ResNet-18 → ConvNeXt-Tiny 384** menaikkan akurasi validation sebesar 5,8 poin. Resolusi yang lebih tinggi mempertahankan detail teks dan tata letak, dan arsitektur ConvNeXt lebih kuat.
-- **Overfitting.** Pada eksperimen 2, akurasi train mencapai 99% sedangkan validation 89%. Kurva val loss tetap menurun hingga akhir, jadi model tidak memburuk, tetapi kapasitasnya jauh melebihi data yang tersedia.
-- **Eksperimen 3** menurunkan selisih train–validation dari 0,105 menjadi 0,096 dengan stochastic depth dan input yang mengikuti rasio halaman, tetapi akurasi validation-nya tidak lebih tinggi dari eksperimen 2 (0,8833 vs 0,8867). Resolusi tambahan dan regularisasi tidak memberi kenaikan yang berarti.
-- **Ensemble.** Prediksi eksperimen 2 dan 3 berbeda pada 7,4% data validation, sehingga penggabungan keduanya menaikkan akurasi menjadi 0,8924 (+0,6 poin dari model tunggal terbaik).
+- Penggantian ResNet-18 (224) dengan ConvNeXt-Tiny (384) menaikkan akurasi validation sebesar 5,8 poin. Pada resolusi 224, banyak detail teks yang hilang (lihat perbandingan resolusi pada EDA), sehingga resolusi yang lebih tinggi kemungkinan berperan besar selain arsitekturnya.
+- Pada eksperimen 2 terjadi overfitting: akurasi train mencapai 99% sedangkan validation 89%. Val loss masih turun sampai epoch terakhir, sehingga model terbaik tetap diambil dari epoch akhir (epoch 9).
+- Eksperimen 3 sedikit mengurangi selisih train dan validation (0,105 menjadi 0,096), tetapi akurasi validation-nya tidak lebih tinggi dari eksperimen 2 (0,8833 vs 0,8867).
+- Prediksi eksperimen 2 dan 3 berbeda pada 7,4% data validation. Dengan merata-ratakan probabilitas keduanya, akurasi naik menjadi 0,8924, atau 0,6 poin di atas model tunggal terbaik.
 
 <table>
 <tr>
@@ -249,9 +248,9 @@ Evaluasi menggunakan model ensemble pada 3.196 data validation.
 
 ![F1 per kelas](results/figures/f1_per_class.png)
 
-- Seluruh kelas membaik dibanding baseline. Kenaikan terbesar terjadi pada kelas yang paling sulit: budget, form, dan scientific_report (masing-masing ±0,11–0,12).
-- **Kelas termudah** adalah email (F1 0,995), resume, handwritten, dan memo. Kelas-kelas ini memiliki penanda visual yang konsisten, seperti blok header To/From/Subject, tulisan tangan, atau struktur bagian yang seragam. Hal ini sejalan dengan t-SNE pada EDA, di mana email sudah terpisah hanya dari piksel mentah.
-- **Kelas tersulit** adalah form, scientific_report, presentation, dan questionnaire. Keempatnya tidak memiliki tata letak baku dan sering berisi campuran tabel, teks, dan isian.
+- Seluruh kelas membaik dibanding baseline. Kenaikan F1 terbesar terjadi pada budget, form, dan scientific_report (±0,11–0,12).
+- F1 tertinggi diperoleh email (0,995), resume, handwritten, dan memo. Kelas-kelas ini memiliki penanda visual yang konsisten, seperti blok header To/From/Subject atau tulisan tangan. Email juga sudah terpisah pada t-SNE di EDA.
+- F1 terendah diperoleh form, scientific_report, presentation, dan questionnaire. Keempatnya tidak memiliki tata letak baku dan sering berisi campuran tabel, teks, dan isian.
 
 ![Confusion matrix](results/figures/confusion_matrix.png)
 
@@ -279,23 +278,23 @@ Kesalahan umumnya terjadi antar kelas yang secara visual memang mirip: invoice d
 | 0,7 – 0,9 | 793 | 0,894 |
 | > 0,9 | 1.941 | 0,988 |
 
-Probabilitas model cukup dapat dipercaya: 61% data diprediksi dengan probabilitas di atas 0,9, dan pada kelompok itu akurasinya 98,8%. Sebaliknya, prediksi dengan probabilitas di bawah 0,5 hanya benar 39%.
+Sebanyak 61% data diprediksi dengan probabilitas di atas 0,9, dan akurasi pada kelompok ini 98,8%. Prediksi dengan probabilitas di bawah 0,5 hanya benar 39%. Artinya, probabilitas yang dihasilkan model dapat dipakai sebagai petunjuk tingkat keyakinan.
 
 ![Prediksi salah](results/figures/misclassified_examples.png)
 
-Gambar di atas adalah kesalahan dengan probabilitas tertinggi, yaitu kasus ketika model yakin tetapi keliru. Sebagian besar kasus ini sulit dibedakan bahkan secara manual:
+Gambar di atas menampilkan 16 kesalahan dengan probabilitas tertinggi. Beberapa di antaranya memang sulit ditentukan kelasnya jika dilihat langsung:
 - Halaman berlabel *advertisement* yang hanya berisi judul pendek ("Promotional Item") atau teks yang diputar diprediksi sebagai *presentation*, karena tampilannya memang seperti slide.
 - Surat dengan tulisan tangan panjang berlabel *questionnaire* atau *specification* diprediksi sebagai *handwritten*.
 - *Form* berjudul "Notice of Approval" dengan susunan seperti surat diprediksi sebagai *letter*.
 
-Beberapa label pada RVL-CDIP bersifat ambigu karena satu halaman dapat memenuhi ciri lebih dari satu kelas. Kesalahan jenis ini sulit dihilangkan hanya dengan memperbaiki model.
+Pada kasus seperti ini satu halaman memenuhi ciri lebih dari satu kelas, sehingga kesalahannya tidak sepenuhnya berasal dari model.
 
 ### 6. Grad-CAM
 
 ![Grad-CAM](results/figures/gradcam_examples.png)
 
 - Pada banyak kelas, model memperhatikan bagian yang masuk akal: blok header pada email dan memo, kolom nominal pada invoice, tanda tangan pada letter, serta judul dan badan teks pada scientific_publication.
-- Pada beberapa gambar (advertisement, form, handwritten, news_article, scientific_report, specification), perhatian model juga jatuh pada **nomor arsip di pojok kanan bawah**. Nomor ini berasal dari proses pengarsipan dokumen, bukan dari isi dokumen. Ada kemungkinan model memanfaatkan pola nomor arsip sebagai jalan pintas. Hal ini perlu diperiksa lebih lanjut, misalnya dengan menutup area tersebut saat pengujian.
+- Pada beberapa gambar (advertisement, form, handwritten, news_article, scientific_report, specification), perhatian model juga jatuh pada nomor arsip di pojok kanan bawah. Nomor ini berasal dari proses pengarsipan, bukan dari isi dokumen, sehingga ada kemungkinan model ikut memanfaatkannya sebagai petunjuk. Dugaan ini belum diuji. Pengujian dapat dilakukan dengan menutup area tersebut lalu membandingkan akurasinya.
 
 ### 7. Skor Kaggle
 
@@ -308,16 +307,16 @@ Empat file submission dikirim ke Kaggle. Semua dihasilkan oleh `02_training.ipyn
 | `submission_convnext_tiny_512.csv` | ConvNeXt-Tiny, 512x384 | 0,8833 | 0,88205 | |
 | **`submission_ensemble.csv`** | rata-rata ConvNeXt 384 + 512 | **0,8924** | **0,89042** | |
 
-**Submission final yang dipilih: `submission_ensemble.csv`.** Pemilihan didasarkan pada akurasi validation tertinggi, bukan skor public. Skor public hanya dihitung dari sebagian data test, sehingga memilih berdasarkan skor public berisiko overfitting pada leaderboard.
+Submission final yang dipilih adalah `submission_ensemble.csv`, berdasarkan akurasi validation tertinggi. Skor public tidak dijadikan dasar pemilihan karena hanya dihitung dari sebagian data test.
 
-Skor public dan akurasi validation selisihnya kurang dari 1,2 poin untuk semua submission, dan model terbaik di validation (ensemble) juga terbaik di public. Ini konsisten dengan hasil EDA yang menunjukkan distribusi train dan test serupa, sehingga validation dapat dipercaya untuk memilih model. Satu-satunya perbedaan urutan terjadi pada eksperimen 2 dan 3: di validation, eksperimen 2 sedikit lebih tinggi (0,8867 vs 0,8833), sedangkan di public, eksperimen 3 lebih tinggi (0,88205 vs 0,87703). Selisih sekecil ini masih dalam batas variasi akibat pemilihan sampel.
+Skor public dan akurasi validation selisihnya kurang dari 1,2 poin untuk semua submission, dan model terbaik di validation (ensemble) juga terbaik di public. Ini konsisten dengan hasil EDA yang menunjukkan distribusi train dan test serupa, sehingga validation dapat dipercaya untuk memilih model. Urutan eksperimen 2 dan 3 berbeda: di validation eksperimen 2 sedikit lebih tinggi (0,8867 vs 0,8833), sedangkan di public eksperimen 3 lebih tinggi (0,88205 vs 0,87703). Selisihnya kurang dari 0,5 poin, sehingga keduanya dapat dianggap setara.
 
 ---
 
 ## Kesimpulan
 
 1. Data relatif bersih dan seimbang. Masalah utamanya adalah sejumlah kecil gambar identik berlabel berbeda, yang dibuang sebelum training.
-2. Fine-tuning CNN pre-trained bekerja jauh lebih baik dibanding fitur piksel sederhana. ConvNeXt-Tiny pada resolusi 384 memberi akurasi validation 0,8867, naik 5,8 poin dari baseline ResNet-18.
+2. ConvNeXt-Tiny pre-trained pada resolusi 384 memberi akurasi validation 0,8867, naik 5,8 poin dari baseline ResNet-18 pada resolusi 224.
 3. Model cenderung overfitting. Regularisasi tambahan sedikit mengurangi selisih train–validation, tetapi tidak menaikkan akurasi.
 4. Ensemble dua model dengan ukuran input berbeda memberi hasil terbaik, yaitu 0,8924 pada validation dan 0,89042 pada public leaderboard.
 5. Kelas dengan penanda visual yang tegas (email, resume, handwritten, memo) diklasifikasikan dengan F1 di atas 0,94. Kelas dengan tata letak bebas (form, scientific_report, presentation, questionnaire) masih berada di kisaran 0,76–0,84, dan sebagian kesalahannya berasal dari dokumen yang memang ambigu.
@@ -331,5 +330,5 @@ Skor public dan akurasi validation selisihnya kurang dari 1,2 poin untuk semua s
 
 ## Author
 
-Violita Karina Putri — 5052241009
+Violita Karina Putri (5052241009)  
 Departemen Statistika, Institut Teknologi Sepuluh Nopember
